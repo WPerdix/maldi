@@ -1,15 +1,14 @@
 import matplotlib.pyplot as plt
-from matplotlib.widgets import Slider
 import matplotlib as mpl
 import numpy as np
 import colorcet as cc
 import os
-import math
-from umap import UMAP
+
+from matplotlib.widgets import Slider
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 
-from map_to_identical_mz_vector import get_samples
+from read_h5 import read_h5
 
             
 def make_image_color(row2grid, data):
@@ -32,13 +31,6 @@ def scale_to_rgb(data):
     for column in range(data.shape[1]):
         scaled_matrix[:, column] = (data[:, column] - min_val[column]) / (max_val[column] - min_val[column])
     return scaled_matrix
-    
-def find_nearest_idx(array,value):
-    idx = np.searchsorted(array, value, side="left")
-    if idx > 0 and (idx == len(array) or math.fabs(value - array[idx-1]) < math.fabs(value - array[idx])):
-        return idx-1
-    else:
-        return idx
     
 def make_image(row2grid, data):
     xmax = np.max(row2grid[:, 0])
@@ -71,20 +63,18 @@ def make_image_color_clusters(row2grid, spatial_i, colors):
          
          
 if __name__ == '__main__':
-    path = os.getcwd() + "/data/numpy/"
+    path = os.getcwd() + "/data/ST002045_massNet/massNet_Raw_h5/"
     
-    for sample in get_samples(path):
-        row2grid = np.load(f"{path}/{sample}_row2grid.npy")
-        mz_vector = np.load(f"{path}/{sample}_mz_vector.npy")
-        data = np.load(f"{path}/{sample}_noTIC_matrix.npy")
-        data[data <= 0] = 0
+    for sample in os.listdir(path):
+        data, mz_vector, row2grid = read_h5(f'{path}/{sample}')
         
-        for i in range(data.shape[0]):
-            data[i, :] /= np.sum(data[i, :])
+        # # TIC normalize (already done for this dataset)
+        # for i in range(data.shape[0]):
+        #     data[i, :] /= np.sum(data[i, :])
         
-        # Uncomment to observe data between start Da and stop Da
-        # start = 100
-        # stop = 1000
+        # # Uncomment to observe data between start Da and stop Da
+        # start = 0
+        # stop = 750
         # from bisect import bisect_left, bisect_right
         # start_index = np.max([bisect_left(mz_vector, start) - 1, 0])
         # stop_index = np.min([bisect_right(mz_vector, stop), mz_vector.shape[0] - 1])
@@ -106,7 +96,7 @@ if __name__ == '__main__':
         
         def plot_sample(row2grid, data):
             ax2.imshow(make_image_color(row2grid, data), cmap=cc.cm.rainbow)
-            ax2.set_title(f"Dimensionality reduction {sample}")
+            ax2.set_title(f"PCA {sample.split('.')[0]}")
             
         def mouse_click(event):
             global initialized
@@ -127,8 +117,7 @@ if __name__ == '__main__':
                     ax3.set_title('Mass Spectrum')
                     plt.pause(0.005)
         
-        # reducer = PCA(n_components=3)
-        reducer = UMAP(n_components=3)
+        reducer = PCA(n_components=3)
 
         embedding = reducer.fit_transform(data)
 
@@ -164,7 +153,8 @@ if __name__ == '__main__':
         
         mz_slider.reset()
         
-        reducer = KMeans(n_clusters=2)
+        k = 5
+        reducer = KMeans(n_clusters=k, n_init='auto')
         
         # Add black background colour to colormap
         colormap = mpl.colormaps['Accent']
@@ -178,6 +168,7 @@ if __name__ == '__main__':
         
         plt.figure()
         plt.imshow(make_image_color_clusters(row2grid, labels, colors)) 
+        plt.title(f'KMeans: {k} clusters')
         
         plt.show()
         
