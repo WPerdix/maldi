@@ -1,15 +1,16 @@
 import matplotlib.pyplot as plt
+from matplotlib.widgets import Slider
 import matplotlib as mpl
 import numpy as np
 import colorcet as cc
 import os
-
-from matplotlib.widgets import Slider
+import math
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 
-from read_h5 import read_h5
-
+def get_samples(path: str):
+    files = list(filter(lambda x: os.path.isfile(f'{path}/{x}') and x.endswith('_row2grid.npy'), os.listdir(path)))
+    return [file.split('_row2grid.npy')[0] for file in files]
             
 def make_image_color(row2grid, data):
     xmax = np.max(row2grid[:, 0])
@@ -21,7 +22,6 @@ def make_image_color(row2grid, data):
     for i, e in enumerate(row2grid):
         image_matrix[e[0] - xmin, e[1] - ymin, :] = data[i, :]
     return image_matrix
-
 def scale_to_rgb(data):
     min_val = np.min(data, axis=0)
     max_val = np.max(data, axis=0)
@@ -32,12 +32,18 @@ def scale_to_rgb(data):
         scaled_matrix[:, column] = (data[:, column] - min_val[column]) / (max_val[column] - min_val[column])
     return scaled_matrix
     
+def find_nearest_idx(array,value):
+    idx = np.searchsorted(array, value, side="left")
+    if idx > 0 and (idx == len(array) or math.fabs(value - array[idx-1]) < math.fabs(value - array[idx])):
+        return idx-1
+    else:
+        return idx
+    
 def make_image(row2grid, data):
     xmax = np.max(row2grid[:, 0])
     xmin = np.min(row2grid[:, 0])
     ymax = np.max(row2grid[:, 1])
     ymin = np.min(row2grid[:, 1])
-
     image_matrix = np.zeros([xmax - xmin + 1, ymax - ymin + 1])
     for i, e in enumerate(row2grid):
         image_matrix[e[0] - xmin, e[1] - ymin] = data[i]
@@ -47,44 +53,45 @@ def make_ion_image(data, mz_vector, row2grid, index):
     if 0 <= index < mz_vector.shape[0]:
         mz_vector = np.ndarray.flatten(mz_vector)
         return make_image(row2grid, data[:, index]), mz_vector[index]
-
+    
+    
 def make_image_color_clusters(row2grid, spatial_i, colors):
     xmax = np.max(row2grid[:, 0])
     xmin = np.min(row2grid[:, 0])
     ymax = np.max(row2grid[:, 1])
     ymin = np.min(row2grid[:, 1])
-
     # background is white 
     image_matrix = np.zeros([xmax - xmin + 1, ymax - ymin + 1, 3])
     for i, e in enumerate(row2grid):
         image_matrix[e[0] - xmin, e[1] - ymin] = colors[spatial_i[i]]
-
     return image_matrix
          
          
 if __name__ == '__main__':
-    path = os.getcwd() + "/data/ST002045_massNet/massNet_Raw_h5/"
+    path = os.getcwd() + "/data/mouse_brain/numpy/"
     
-    for sample in os.listdir(path):
-        data, mz_vector, row2grid = read_h5(f'{path}/{sample}')
+    for sample in get_samples(path):
+        row2grid = np.load(f"{path}/{sample}_row2grid.npy")
+        mz_vector = np.load(f"{path}/{sample}_mz_vector.npy")
+        data = np.load(f"{path}/{sample}_noTIC_matrix.npy")
+        data[data <= 0] = 0
         
-        # # TIC normalize (already done for this dataset)
-        # for i in range(data.shape[0]):
-        #     data[i, :] /= np.sum(data[i, :])
+        # TIC normalize data
+        for i in range(data.shape[0]):
+            data[i, :] /= np.sum(data[i, :])
         
-        # # Uncomment to observe data between start Da and stop Da
-        # start = 0
-        # stop = 750
-        # from bisect import bisect_left, bisect_right
-        # start_index = np.max([bisect_left(mz_vector, start) - 1, 0])
-        # stop_index = np.min([bisect_right(mz_vector, stop), mz_vector.shape[0] - 1])
-        # data = data[:, start_index: stop_index + 1]
-        # mz_vector = mz_vector[start_index: stop_index + 1]
-
+        # Uncomment to observe data between start Da and stop Da
+        start = 100
+        stop = 4000
+        from bisect import bisect_left, bisect_right
+        start_index = np.max([bisect_left(mz_vector, start) - 1, 0])
+        stop_index = np.min([bisect_right(mz_vector, stop), mz_vector.shape[0] - 1])
+        data = data[:, start_index: stop_index + 1]
+        mz_vector = mz_vector[start_index: stop_index + 1]
+        
         pixel_to_index_dict = dict()
         xmin = np.min(row2grid[:, 0])
         ymin = np.min(row2grid[:, 1])
-
         for i, e in enumerate(row2grid):
             pixel_to_index_dict[e[0] - xmin, e[1] - ymin] = i
             
@@ -96,7 +103,7 @@ if __name__ == '__main__':
         
         def plot_sample(row2grid, data):
             ax2.imshow(make_image_color(row2grid, data), cmap=cc.cm.rainbow)
-            ax2.set_title(f"PCA {sample.split('.')[0]}")
+            ax2.set_title(f"Dimensionality reduction {sample}")
             
         def mouse_click(event):
             global initialized
@@ -104,12 +111,11 @@ if __name__ == '__main__':
             if x and y:
                 index = pixel_to_index_dict.get((np.round(y), np.round(x)))
                 if index:
-                    xlim, ylim = ax3.get_xlim(), ax3.get_ylim()
+                    xlim = ax3.get_xlim()
                     ax3.cla()
                     ax3.plot(mz_vector, data[index, :])
                     if initialized:
                         ax3.set_xlim(xlim)
-                        ax3.set_ylim(ylim)
                     else:
                         initialized = True
                     ax3.set_xlabel('m/z value')
@@ -118,11 +124,8 @@ if __name__ == '__main__':
                     plt.pause(0.005)
         
         reducer = PCA(n_components=3)
-
         embedding = reducer.fit_transform(data)
-
         scaled_embedding = scale_to_rgb(embedding)
-
         plt.connect('button_press_event', mouse_click)
         plot_sample(row2grid, scaled_embedding)
         
@@ -143,7 +146,10 @@ if __name__ == '__main__':
         def update(val):
             ax1.cla()
             img, mz = make_ion_image(data, mz_vector, row2grid, mz_slider.val)
-            img = (img - np.min(img)) / (np.max(img) - np.min(img))
+            if np.max(img) - np.min(img) == 0:
+                img = np.zeros_like(img)
+            else:
+                img = (img - np.min(img)) / (np.max(img) - np.min(img))
             ax1.imshow(img)
             ax1.set_title(f'{"{:0.3f}".format(mz)} Da')
             fig1.canvas.draw_idle()
@@ -153,22 +159,6 @@ if __name__ == '__main__':
         
         mz_slider.reset()
         
-        k = 5
-        reducer = KMeans(n_clusters=k, n_init='auto')
-        
-        # Add black background colour to colormap
-        colormap = mpl.colormaps['Accent']
-        accent_colors = colormap.colors
-        colors = [(0, 0, 0)]
-        [colors.append(np.array(c)) for c in accent_colors]
-        colormap.colors = np.array(colors)
-        
-        # + 1 so the background has a different colour
-        labels = reducer.fit(data).labels_ + 1
-        
-        plt.figure()
-        plt.imshow(make_image_color_clusters(row2grid, labels, colors)) 
-        plt.title(f'KMeans: {k} clusters')
-        
         plt.show()
+        
         
