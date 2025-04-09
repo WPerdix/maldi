@@ -119,10 +119,10 @@ def convert(path, path_save, mz_dtype_file, intensities_dtype_file, dtype, low_m
                     
 if __name__ == '__main__':
     
-    path = f'{os.getcwd()}/data/mouse_brain'
-    path_save = f'{os.getcwd()}/data/mouse_brain/numpy'
+    path = f'{os.getcwd()}/data/DMSI0005_F894CPH_LipidNeg_IMZML'
+    path_save = f'{os.getcwd()}/data/DMSI0005_F894CPH_LipidNeg_IMZML/numpy'
     mz_dtype_file = 'float64'
-    intensities_dtype_file = 'float64'
+    intensities_dtype_file = 'float32'
     dtype = np.float32
     
     convert(path, path_save, mz_dtype_file, intensities_dtype_file, dtype)

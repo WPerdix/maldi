@@ -5,7 +5,7 @@ import numpy as np
 import colorcet as cc
 import os
 import math
-from sklearn.decomposition import PCA
+from sklearn.decomposition import PCA, NMF
 from sklearn.cluster import KMeans
 
 def get_samples(path: str):
@@ -22,6 +22,7 @@ def make_image_color(row2grid, data):
     for i, e in enumerate(row2grid):
         image_matrix[e[0] - xmin, e[1] - ymin, :] = data[i, :]
     return image_matrix
+
 def scale_to_rgb(data):
     min_val = np.min(data, axis=0)
     max_val = np.max(data, axis=0)
@@ -31,13 +32,6 @@ def scale_to_rgb(data):
     for column in range(data.shape[1]):
         scaled_matrix[:, column] = (data[:, column] - min_val[column]) / (max_val[column] - min_val[column])
     return scaled_matrix
-    
-def find_nearest_idx(array,value):
-    idx = np.searchsorted(array, value, side="left")
-    if idx > 0 and (idx == len(array) or math.fabs(value - array[idx-1]) < math.fabs(value - array[idx])):
-        return idx-1
-    else:
-        return idx
     
 def make_image(row2grid, data):
     xmax = np.max(row2grid[:, 0])
@@ -53,22 +47,10 @@ def make_ion_image(data, mz_vector, row2grid, index):
     if 0 <= index < mz_vector.shape[0]:
         mz_vector = np.ndarray.flatten(mz_vector)
         return make_image(row2grid, data[:, index]), mz_vector[index]
-    
-    
-def make_image_color_clusters(row2grid, spatial_i, colors):
-    xmax = np.max(row2grid[:, 0])
-    xmin = np.min(row2grid[:, 0])
-    ymax = np.max(row2grid[:, 1])
-    ymin = np.min(row2grid[:, 1])
-    # background is white 
-    image_matrix = np.zeros([xmax - xmin + 1, ymax - ymin + 1, 3])
-    for i, e in enumerate(row2grid):
-        image_matrix[e[0] - xmin, e[1] - ymin] = colors[spatial_i[i]]
-    return image_matrix
          
          
 if __name__ == '__main__':
-    path = os.getcwd() + "/data/mouse_brain/numpy/"
+    path = os.getcwd() + "/data/DMSI0005_F894CPH_LipidNeg_IMZML/numpy/"
     
     for sample in get_samples(path):
         row2grid = np.load(f"{path}/{sample}_row2grid.npy")
@@ -76,18 +58,16 @@ if __name__ == '__main__':
         data = np.load(f"{path}/{sample}_noTIC_matrix.npy")
         data[data <= 0] = 0
         
+        print('Binning data...')
+        from utils import binning_matrix
+        mz = np.arange(600, 1100.05, 0.05)
+        data = binning_matrix(mz, mz_vector, data)
+        mz_vector = mz
+        
+        print('Normalizing data...')
         # TIC normalize data
         for i in range(data.shape[0]):
             data[i, :] /= np.sum(data[i, :])
-        
-        # Uncomment to observe data between start Da and stop Da
-        start = 100
-        stop = 4000
-        from bisect import bisect_left, bisect_right
-        start_index = np.max([bisect_left(mz_vector, start) - 1, 0])
-        stop_index = np.min([bisect_right(mz_vector, stop), mz_vector.shape[0] - 1])
-        data = data[:, start_index: stop_index + 1]
-        mz_vector = mz_vector[start_index: stop_index + 1]
         
         pixel_to_index_dict = dict()
         xmin = np.min(row2grid[:, 0])
@@ -123,7 +103,9 @@ if __name__ == '__main__':
                     ax3.set_title('Mass Spectrum')
                     plt.pause(0.005)
         
-        reducer = PCA(n_components=3)
+        print('Dimensionality reduction...')
+        # reducer = NMF(n_components=3, init='random', random_state=0, beta_loss='kullback-leibler', solver='mu')
+        reducer = NMF(n_components=3, init='random', random_state=0)
         embedding = reducer.fit_transform(data)
         scaled_embedding = scale_to_rgb(embedding)
         plt.connect('button_press_event', mouse_click)
